@@ -18,9 +18,7 @@ defmodule BinanceMock do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  def init(_args) do
-    {:ok, %State{}}
-  end
+  def init(_args), do: {:ok, %State{}}
 
   def handle_cast(
         {:add_order, %Binance.Order{symbol: symbol} = order},
@@ -42,11 +40,7 @@ defmodule BinanceMock do
     }
   end
 
-  def handle_call(
-        :generate_id,
-        _from,
-        %State{fake_order_id: id} = state
-      ) do
+  def handle_call(:generate_id, _from, %State{fake_order_id: id} = state) do
     {:reply, id + 1, %{state | fake_order_id: id + 1}}
   end
 
@@ -55,16 +49,14 @@ defmodule BinanceMock do
         _from,
         %State{order_books: order_books} = state
       ) do
-    order_book =
-      Map.get(
-        order_books,
-        :"#{symbol}",
-        %OrderBook{}
-      )
+    order_book = Map.get(order_books, :"#{symbol}", %OrderBook{})
+    all_sides_order_book = order_book.buy_side ++ order_book.sell_side ++ order_book.historical
 
     result =
-      (order_book.buy_side ++ order_book.sell_side ++ order_book.historical)
-      |> Enum.find(&(&1.symbol == symbol and &1.time == time and &1.order_id == order_id))
+      Enum.find(
+        all_sides_order_book,
+        &(&1.symbol == symbol and &1.time == time and &1.order_id == order_id)
+      )
 
     {:reply, {:ok, result}, state}
   end
@@ -112,15 +104,10 @@ defmodule BinanceMock do
   end
 
   def get_order(symbol, time, order_id) do
-    GenServer.call(
-      __MODULE__,
-      {:get_order, symbol, time, order_id}
-    )
+    GenServer.call(__MODULE__, {:get_order, symbol, time, order_id})
   end
 
-  def get_exchange_info do
-    Binance.get_exchange_info()
-  end
+  def get_exchange_info, do: Binance.get_exchange_info()
 
   def order_limit_buy(symbol, quantity, price, "GTC") do
     order_limit(symbol, quantity, price, "BUY")
@@ -131,14 +118,7 @@ defmodule BinanceMock do
   end
 
   defp order_limit(symbol, quantity, price, side) do
-    %Binance.Order{} =
-      fake_order =
-      generate_fake_order(
-        symbol,
-        quantity,
-        price,
-        side
-      )
+    %Binance.Order{} = fake_order = generate_fake_order(symbol, quantity, price, side)
 
     GenServer.cast(__MODULE__, {:add_order, fake_order})
 
@@ -153,28 +133,17 @@ defmodule BinanceMock do
       false ->
         Logger.debug("BinanceMock subscribing to #{stream_name}")
 
-        Phoenix.PubSub.subscribe(
-          Streamer.PubSub,
-          stream_name
-        )
+        Phoenix.PubSub.subscribe(Streamer.PubSub, stream_name)
 
         [symbol | subscriptions]
 
-      _ ->
+      _other ->
         subscriptions
     end
   end
 
-  defp add_order(
-         %Binance.Order{symbol: symbol} = order,
-         order_books
-       ) do
-    order_book =
-      Map.get(
-        order_books,
-        :"#{symbol}",
-        %OrderBook{}
-      )
+  defp add_order(%Binance.Order{symbol: symbol} = order, order_books) do
+    order_book = Map.get(order_books, :"#{symbol}", %OrderBook{})
 
     order_book =
       if order.side == "SELL" do
@@ -203,7 +172,7 @@ defmodule BinanceMock do
               (side == "BUY" or side == "SELL") do
     current_timestamp = :os.system_time(:millisecond)
     order_id = GenServer.call(__MODULE__, :generate_id)
-    client_order_id = :crypto.hash(:md5, "#{order_id}") |> Base.encode16()
+    client_order_id = Base.encode16(:crypto.hash(:md5, "#{order_id}"))
 
     Binance.Order.new(%{
       symbol: symbol,
@@ -227,10 +196,7 @@ defmodule BinanceMock do
 
   defp convert_order_to_order_response(%Binance.Order{} = order) do
     %{
-      struct(
-        Binance.OrderResponse,
-        order |> Map.to_list()
-      )
+      struct(Binance.OrderResponse, Map.to_list(order))
       | transact_time: order.time
     }
   end
@@ -251,10 +217,6 @@ defmodule BinanceMock do
   end
 
   defp broadcast_trade_event(%TradeEvent{} = trade_event) do
-    Phoenix.PubSub.broadcast(
-      Streamer.PubSub,
-      "TRADE_EVENTS:#{trade_event.symbol}",
-      trade_event
-    )
+    Phoenix.PubSub.broadcast(Streamer.PubSub, "TRADE_EVENTS:#{trade_event.symbol}", trade_event)
   end
 end
